@@ -17,7 +17,7 @@ namespace Sample.Kafka.PostgreSql.Controllers
         {
             _capBus = producer;
         }
-
+        [HttpPost]
         [Route("~/control/start")]
         public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)
         {
@@ -26,14 +26,16 @@ namespace Sample.Kafka.PostgreSql.Controllers
         }
 
         [Route("~/control/stop")]
+        [HttpPost]
         public async Task<IActionResult> Stop([FromServices] IBootstrapper bootstrapper)
         {
             await bootstrapper.DisposeAsync();
             return Ok();
         }
-         
+
 
         [Route("~/delay/{delaySeconds:int}")]
+        [HttpPost]
         public async Task<IActionResult> Delay(int delaySeconds)
         {
             await _capBus.PublishDelayAsync(TimeSpan.FromSeconds(delaySeconds), "sample.kafka.postgrsql", DateTime.Now);
@@ -43,6 +45,7 @@ namespace Sample.Kafka.PostgreSql.Controllers
 
 
         [Route("~/without/transaction")]
+        [HttpPost]
         public async Task<IActionResult> WithoutTransaction()
         {
             await _capBus.PublishAsync("sample.kafka.postgrsql", DateTime.Now);
@@ -51,19 +54,27 @@ namespace Sample.Kafka.PostgreSql.Controllers
         }
 
         [Route("~/adonet/transaction")]
+        [HttpPost]
         public IActionResult AdonetWithTransaction()
         {
-            using (var connection = new NpgsqlConnection(""))
+            try
             {
-                using (var transaction = connection.BeginTransaction(_capBus, autoCommit: false))
+                using (var connection = new NpgsqlConnection("Host=localhost;Port=5432;Database=cap;Username=postgres;Password=postgres;"))
                 {
-                    //your business code
-                    connection.Execute("insert into test(name) values('test')", transaction: (IDbTransaction)transaction.DbTransaction);
+                    using (var transaction = connection.BeginTransaction(_capBus, autoCommit: false))
+                    {
+                        //your business code
+                        connection.Execute("insert into test(name) values('test')", transaction: (IDbTransaction)transaction.DbTransaction);
+                        throw new Exception();
+                        _capBus.Publish("sample.kafka.postgrsql", DateTime.Now +"kopkpokop");
 
-                    _capBus.Publish("sample.kafka.postgrsql", DateTime.Now);
-
-                    transaction.Commit();
+                        transaction.Commit();
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                return Ok(ex.StackTrace);
             }
 
             return Ok();
@@ -71,6 +82,7 @@ namespace Sample.Kafka.PostgreSql.Controllers
 
 
         [CapSubscribe("sample.kafka.postgrsql")]
+        [HttpPost]
         public void Test2(DateTime value)
         {
             Console.WriteLine("Subscriber output message: " + value);
